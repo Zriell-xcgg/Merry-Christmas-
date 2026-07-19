@@ -15,11 +15,13 @@
             width: 100%;
             height: 100vh;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
             background-color: #000;
             font-family: 'Courier New', monospace;
             overflow: hidden;
+            gap: 20px;
         }
         
         #canvas {
@@ -27,27 +29,57 @@
             height: 440px;
             background-color: #000;
             color: #fff;
-            position: relative;
-            white-space: pre-wrap;
-            word-wrap: break-word;
+            white-space: pre;
             font-size: 14px;
             line-height: 20px;
-            letter-spacing: 2px;
             overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #playButton {
+            padding: 12px 30px;
+            font-size: 16px;
+            background-color: #fff;
+            color: #000;
+            border: 2px solid #fff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            letter-spacing: 2px;
+        }
+
+        #playButton:hover {
+            background-color: #000;
+            color: #fff;
+        }
+
+        #playButton:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
         
         @media (max-width: 768px) {
             #canvas {
                 width: 100%;
-                height: 100vh;
+                height: 60vh;
                 font-size: 12px;
                 line-height: 18px;
+            }
+
+            #playButton {
+                padding: 10px 20px;
+                font-size: 14px;
             }
         }
     </style>
 </head>
 <body>
     <div id="canvas"></div>
+    <button id="playButton">▶ PLAY</button>
+    <audio id="audio"></audio>
 
     <script>
         // Lirik lagu beserta durasinya
@@ -67,16 +99,17 @@
         const FPS = 0.04;
 
         const canvas = document.getElementById('canvas');
+        const playButton = document.getElementById('playButton');
+        const audio = document.getElementById('audio');
+
+        // Set audio source
+        audio.src = "./lagu.mp3";
+
+        let isPlaying = false;
 
         function getVisualLength(text) {
-            /**
-             * Menghitung panjang visual teks
-             * Karakter lebar (East Asian) dihitung sebagai 2
-             */
             let length = 0;
             for (let char of text) {
-                const code = char.charCodeAt(0);
-                // Hitung karakter lebar sebagai 2
                 if (isWideCharacter(char)) {
                     length += 2;
                 } else {
@@ -87,32 +120,21 @@
         }
 
         function isWideCharacter(char) {
-            /**
-             * Deteksi karakter lebar (didasarkan pada Unicode)
-             */
             const code = char.charCodeAt(0);
-            // Jangkauan Unicode untuk karakter lebar (East Asian)
-            if (code >= 0x1100 && code <= 0x115F) return true; // Hangul Jamo
-            if (code >= 0x2300 && code <= 0x23FF) return true; // Miscellaneous Technical
-            if (code >= 0x2E80 && code <= 0xA4CF) return true; // CJK
-            if (code >= 0xAC00 && code <= 0xD7AF) return true; // Hangul Syllables
-            if (code >= 0xF900 && code <= 0xFAFF) return true; // CJK Compatibility Ideographs
-            if (code >= 0x20000 && code <= 0x2A6DF) return true; // CJK Extension B
-            // Special cases untuk karakter dekoratif
+            if (code >= 0x1100 && code <= 0x115F) return true;
+            if (code >= 0x2300 && code <= 0x23FF) return true;
+            if (code >= 0x2E80 && code <= 0xA4CF) return true;
+            if (code >= 0xAC00 && code <= 0xD7AF) return true;
+            if (code >= 0xF900 && code <= 0xFAFF) return true;
+            if (code >= 0x20000 && code <= 0x2A6DF) return true;
             if (char === "꙳" || char === "❅" || char === "❆") return true;
             return false;
         }
 
         function render(lyric, snow) {
-            /**
-             * Mengatur pergerakan salju estetik dan menampilkan lirik dengan benar
-             */
-
-            // Geser salju ke bawah (logic dari bawah ke atas)
             for (let r = HEIGHT - 1; r > 0; r--) {
                 for (let c = 0; c < WIDTH; c++) {
                     if (snow[r - 1][c] !== " ") {
-                        // Kecepatan sedang
                         if (Math.random() < 0.09) {
                             snow[r][c] = snow[r - 1][c];
                             snow[r - 1][c] = " ";
@@ -121,82 +143,55 @@
                 }
             }
 
-            // Bersihkan baris paling bawah secara berkala
             for (let c = 0; c < WIDTH; c++) {
                 if (Math.random() < 0.10) {
                     snow[HEIGHT - 1][c] = " ";
                 }
             }
 
-            // Spawn salju baru di baris paling atas
             for (let c = 0; c < WIDTH; c++) {
                 if (snow[0][c] === " ") {
                     snow[0][c] = Math.random() < 0.010 ? FLAKES[Math.floor(Math.random() * FLAKES.length)] : " ";
                 }
             }
 
-            // Duplikat frame untuk rendering teks tanpa merusak array utama salju
             const frame = snow.map(row => [...row]);
-            const mid_row = Math.floor(HEIGHT * 3 / 5);
+            const mid_row = Math.floor(HEIGHT / 2);
 
-            // Menghitung posisi tengah lirik berdasarkan panjang visual
-            const lyric_visual_len = getVisualLength(lyric);
-            const start_col = Math.floor((WIDTH - lyric_visual_len) / 2);
-
-            // Beri ruang kosong di sekitar lirik
             for (let r_offset = -1; r_offset <= 1; r_offset++) {
                 if (mid_row + r_offset >= 0 && mid_row + r_offset < HEIGHT) {
                     frame[mid_row + r_offset] = Array(WIDTH).fill(" ");
                 }
             }
 
-            // Tempel lirik di tengah layar
+            const start_col = Math.floor((WIDTH - lyric.length) / 2);
             let col = start_col;
             for (let ch of lyric) {
-                const char_len = isWideCharacter(ch) ? 2 : 1;
-                if (col >= 0 && col < WIDTH && col + char_len <= WIDTH) {
+                if (col >= 0 && col < WIDTH) {
                     frame[mid_row][col] = ch;
-                    if (char_len === 2) {
-                        frame[mid_row][col + 1] = "";
-                    }
-                    col += char_len;
+                    col++;
                 } else {
-                    col += char_len;
+                    col++;
                 }
             }
 
             return frame.map(row => row.join("")).join("\n");
         }
 
-        function renderSimpleText(lines, padRows = 0) {
-            /**
-             * Fungsi pembantu untuk menampilkan teks diam (judul/closing)
-             */
-            const totalTextRows = lines.length;
-            const startRow = Math.floor((HEIGHT - totalTextRows) / 2) + padRows;
-
-            // Membuat canvas kosong
+        function renderSimpleText(lines) {
             const frame = Array(HEIGHT).fill(null).map(() => Array(WIDTH).fill(" "));
+            const startRow = Math.floor((HEIGHT - lines.length) / 2);
 
-            // Menempel teks baris per baris
             for (let i = 0; i < lines.length; i++) {
                 const r = startRow + i;
                 if (r >= 0 && r < HEIGHT) {
                     const text = lines[i];
-                    const visualLen = getVisualLength(text);
-                    let c = Math.floor((WIDTH - visualLen) / 2);
-
-                    let currC = c;
-                    for (let ch of text) {
-                        const char_len = isWideCharacter(ch) ? 2 : 1;
-                        if (currC >= 0 && currC < WIDTH && currC + char_len <= WIDTH) {
-                            frame[r][currC] = ch;
-                            if (char_len === 2) {
-                                frame[r][currC + 1] = "";
-                            }
-                            currC += char_len;
-                        } else {
-                            currC += char_len;
+                    const start_col = Math.floor((WIDTH - text.length) / 2);
+                    
+                    for (let j = 0; j < text.length; j++) {
+                        const c = start_col + j;
+                        if (c >= 0 && c < WIDTH) {
+                            frame[r][c] = text[j];
                         }
                     }
                 }
@@ -209,12 +204,16 @@
             return new Promise(resolve => setTimeout(resolve, ms));
         }
 
-        async function main() {
-            // Diinisialisasi kosong total agar salju turun bertahap
+        async function startAnimation() {
             let snow = Array(HEIGHT).fill(null).map(() => Array(WIDTH).fill(" "));
+            isPlaying = true;
+            playButton.disabled = true;
+            playButton.textContent = "▶ PLAYING...";
+
+            audio.currentTime = 0;
+            audio.play().catch(e => console.log("Audio play error:", e));
 
             try {
-                // Title
                 const titleLines = [
                     "⋆꙳•❅*‧ ‧*❆ ₊⋆",
                     "I Miss You",
@@ -222,17 +221,15 @@
                     "⋆꙳•❅*‧ ‧*❆ ₊⋆"
                 ];
 
-                canvas.textContent = renderSimpleText(titleLines, -1);
+                canvas.textContent = renderSimpleText(titleLines);
                 await sleep(3000);
 
-                // Intro snow animation (4 detik)
                 const introDeadline = Date.now() + 4000;
                 while (Date.now() < introDeadline) {
                     canvas.textContent = render("", snow);
                     await sleep(FPS * 1000);
                 }
 
-                // Main lyrics
                 for (let { text, duration } of LYRICS) {
                     const lyricDeadline = Date.now() + duration * 1000;
                     while (Date.now() < lyricDeadline) {
@@ -241,22 +238,25 @@
                     }
                 }
 
-                // Closing
                 canvas.textContent = renderSimpleText(["i loved u"]);
                 await sleep(3500);
 
                 canvas.textContent = "";
             } catch (e) {
                 console.error(e);
+            } finally {
+                isPlaying = false;
+                playButton.disabled = false;
+                playButton.textContent = "▶ PLAY";
+                audio.pause();
             }
         }
 
-        // Mulai animasi saat halaman selesai dimuat
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', main);
-        } else {
-            main();
-        }
+        playButton.addEventListener('click', () => {
+            if (!isPlaying) {
+                startAnimation();
+            }
+        });
     </script>
 </body>
 </html>
